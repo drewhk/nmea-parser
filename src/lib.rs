@@ -210,20 +210,22 @@ pub trait LatLon {
 pub struct NmeaParser {
     saved_fragments: HashMap<String, String>,
     saved_vsds: HashMap<u32, ais::VesselStaticData>,
+    allow_bad_checksum: bool,
 }
 
 impl Default for NmeaParser {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
 impl NmeaParser {
     /// Construct an empty parser which is ready to receive sentences.
-    pub fn new() -> NmeaParser {
+    pub fn new(allow_bad_checksum: bool) -> NmeaParser {
         NmeaParser {
             saved_fragments: HashMap::new(),
             saved_vsds: HashMap::new(),
+            allow_bad_checksum,
         }
     }
 
@@ -308,13 +310,17 @@ impl NmeaParser {
         for c in sentence.as_str().chars().skip(1) {
             checksum ^= c as u8;
         }
-        let checksum_hex_calculated = format!("{:02X?}", checksum);
-        if checksum_hex_calculated != checksum_hex_given && !checksum_hex_given.is_empty() {
-            return Err(ParseError::CorruptedSentence(format!(
-                "Corrupted NMEA sentence: {:02X?} != {:02X?}",
-                checksum_hex_calculated, checksum_hex_given
-            )));
+
+        if !self.allow_bad_checksum {
+            let checksum_hex_calculated = format!("{:02X?}", checksum);
+            if checksum_hex_calculated != checksum_hex_given && !checksum_hex_given.is_empty() {
+                return Err(ParseError::CorruptedSentence(format!(
+                    "Corrupted NMEA sentence: {:02X?} != {:02X?}",
+                    checksum_hex_calculated, checksum_hex_given
+                )));
+            }
         }
+
 
         // Pick sentence type
         let sentence_type = {
@@ -623,7 +629,7 @@ mod test {
     use super::*;
     #[test]
     fn test_parse_invalid_sentence() {
-        let mut p = NmeaParser::new();
+        let mut p = NmeaParser::new(false);
         assert_eq!(
             p.parse_sentence("$޴GAGSV,,"),
             Err(ParseError::InvalidSentence(
